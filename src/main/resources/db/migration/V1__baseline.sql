@@ -1,0 +1,6 @@
+-- Baseline migration for the movie booking schema.
+--
+-- Schema objects (cities, theaters, screens, seats, movies, shows, ...) are
+-- introduced in Segment 2 and later. This file intentionally contains no DDL;
+-- its purpose in Segment 1 is to confirm the Flyway pipeline is wired and to
+-- create the flyway_schema_history bookkeeping table on first run.
