@@ -9,6 +9,7 @@ public record ShowRequest(
         @NotNull Long movieId,
         @NotNull Long screenId,
         @NotNull @Future Instant startTime,
-        Long pricingTierId
+        Long pricingTierId,
+        Long refundPolicyId
 ) {
 }

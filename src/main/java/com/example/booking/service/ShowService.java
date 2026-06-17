@@ -2,6 +2,7 @@ package com.example.booking.service;
 
 import com.example.booking.domain.Movie;
 import com.example.booking.domain.PricingTier;
+import com.example.booking.domain.RefundPolicy;
 import com.example.booking.domain.Screen;
 import com.example.booking.domain.Seat;
 import com.example.booking.domain.Show;
@@ -10,6 +11,7 @@ import com.example.booking.domain.ShowSeatStatus;
 import com.example.booking.exception.ResourceNotFoundException;
 import com.example.booking.repository.MovieRepository;
 import com.example.booking.repository.PricingTierRepository;
+import com.example.booking.repository.RefundPolicyRepository;
 import com.example.booking.repository.ScreenRepository;
 import com.example.booking.repository.SeatRepository;
 import com.example.booking.repository.ShowRepository;
@@ -42,11 +44,13 @@ public class ShowService {
     private final ShowSeatRepository showSeatRepository;
     private final TheaterRepository theaterRepository;
     private final PricingTierRepository pricingTierRepository;
+    private final RefundPolicyRepository refundPolicyRepository;
 
     public ShowService(ShowRepository showRepository, MovieRepository movieRepository,
                         ScreenRepository screenRepository, SeatRepository seatRepository,
                         ShowSeatRepository showSeatRepository, TheaterRepository theaterRepository,
-                        PricingTierRepository pricingTierRepository) {
+                        PricingTierRepository pricingTierRepository,
+                        RefundPolicyRepository refundPolicyRepository) {
         this.showRepository = showRepository;
         this.movieRepository = movieRepository;
         this.screenRepository = screenRepository;
@@ -54,6 +58,7 @@ public class ShowService {
         this.showSeatRepository = showSeatRepository;
         this.theaterRepository = theaterRepository;
         this.pricingTierRepository = pricingTierRepository;
+        this.refundPolicyRepository = refundPolicyRepository;
     }
 
     public ShowResponse create(ShowRequest request) {
@@ -67,7 +72,13 @@ public class ShowService {
                     .orElseThrow(() -> new ResourceNotFoundException("PricingTier " + request.pricingTierId() + " not found"));
         }
 
-        Show show = showRepository.save(new Show(movie, screen, request.startTime(), endTime, pricingTier));
+        RefundPolicy refundPolicy = null;
+        if (request.refundPolicyId() != null) {
+            refundPolicy = refundPolicyRepository.findById(request.refundPolicyId())
+                    .orElseThrow(() -> new ResourceNotFoundException("RefundPolicy " + request.refundPolicyId() + " not found"));
+        }
+
+        Show show = showRepository.save(new Show(movie, screen, request.startTime(), endTime, pricingTier, refundPolicy));
 
         List<Seat> seats = seatRepository.findByScreenIdOrderByRowLabelAscSeatNumberAsc(screen.getId());
         List<ShowSeat> showSeats = seats.stream()

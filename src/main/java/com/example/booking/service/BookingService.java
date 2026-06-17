@@ -4,25 +4,35 @@ import com.example.booking.domain.Booking;
 import com.example.booking.domain.BookingStatus;
 import com.example.booking.domain.DiscountCode;
 import com.example.booking.domain.PricingTier;
+import com.example.booking.domain.RefundPolicy;
+import com.example.booking.domain.RefundTier;
 import com.example.booking.domain.SeatCategory;
 import com.example.booking.domain.Show;
 import com.example.booking.domain.ShowSeat;
 import com.example.booking.domain.ShowSeatStatus;
+import com.example.booking.event.BookingCancelledEvent;
+import com.example.booking.event.BookingConfirmedEvent;
 import com.example.booking.exception.InvalidRequestException;
 import com.example.booking.exception.ResourceNotFoundException;
 import com.example.booking.exception.SeatNotAvailableException;
 import com.example.booking.repository.BookingRepository;
 import com.example.booking.repository.DiscountCodeRepository;
+import com.example.booking.repository.RefundPolicyRepository;
 import com.example.booking.repository.ShowRepository;
 import com.example.booking.repository.ShowSeatRepository;
 import com.example.booking.web.dto.BookingRequest;
 import com.example.booking.web.dto.BookingResponse;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.Comparator;
 import java.util.List;
 
 /**
@@ -42,21 +52,27 @@ public class BookingService {
     private final ShowRepository showRepository;
     private final ShowSeatRepository showSeatRepository;
     private final DiscountCodeRepository discountCodeRepository;
+    private final RefundPolicyRepository refundPolicyRepository;
     private final PricingService pricingService;
     private final PaymentGateway paymentGateway;
+    private final ApplicationEventPublisher eventPublisher;
 
     public BookingService(BookingRepository bookingRepository,
                           ShowRepository showRepository,
                           ShowSeatRepository showSeatRepository,
                           DiscountCodeRepository discountCodeRepository,
+                          RefundPolicyRepository refundPolicyRepository,
                           PricingService pricingService,
-                          PaymentGateway paymentGateway) {
+                          PaymentGateway paymentGateway,
+                          ApplicationEventPublisher eventPublisher) {
         this.bookingRepository = bookingRepository;
         this.showRepository = showRepository;
         this.showSeatRepository = showSeatRepository;
         this.discountCodeRepository = discountCodeRepository;
+        this.refundPolicyRepository = refundPolicyRepository;
         this.pricingService = pricingService;
         this.paymentGateway = paymentGateway;
+        this.eventPublisher = eventPublisher;
     }
 
     public BookingResponse book(String customer, BookingRequest request, String idempotencyKey) {
@@ -117,6 +133,13 @@ public class BookingService {
 
         if (paymentSuccess) {
             booking.confirm();
+            // Event queued here, fired after transaction commits (AFTER_COMMIT listener)
+            eventPublisher.publishEvent(new BookingConfirmedEvent(
+                    booking.getId(), customer,
+                    show.getMovie().getTitle(),
+                    show.getScreen().getTheater().getName(),
+                    showSeat.getSeat().getRowLabel() + showSeat.getSeat().getSeatNumber(),
+                    booking.getFinalPrice()));
         } else {
             booking.markPaymentFailed();
             // Seat returns to inventory so others can book it
@@ -124,6 +147,78 @@ public class BookingService {
         }
 
         return BookingResponse.from(booking);
+    }
+
+    /**
+     * Cancel a booking. Customers can only cancel their own CONFIRMED bookings.
+     * {@code isAdmin=true} allows cancelling any CONFIRMED booking regardless of owner.
+     *
+     * Flow: validate status → compute refund → mark CANCELLED → release seat →
+     *   publish BookingCancelledEvent (fires after commit on async thread).
+     */
+    public BookingResponse cancel(Long bookingId, String requester, boolean isAdmin) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new ResourceNotFoundException("Booking " + bookingId + " not found"));
+
+        if (!isAdmin && !requester.equals(booking.getCustomer())) {
+            throw new ResourceNotFoundException("Booking " + bookingId + " not found");
+        }
+        if (booking.getStatus() != BookingStatus.CONFIRMED) {
+            throw new InvalidRequestException(
+                    "Only CONFIRMED bookings can be cancelled (current status: " + booking.getStatus() + ")");
+        }
+
+        BigDecimal refundAmount = computeRefund(booking);
+        Show show = booking.getShow();
+        ShowSeat showSeat = booking.getShowSeat();
+
+        booking.cancel(refundAmount);
+        showSeatRepository.releaseBookedSeat(showSeat.getId());
+
+        eventPublisher.publishEvent(new BookingCancelledEvent(
+                booking.getId(), booking.getCustomer(),
+                show.getMovie().getTitle(),
+                show.getScreen().getTheater().getName(),
+                showSeat.getSeat().getRowLabel() + showSeat.getSeat().getSeatNumber(),
+                refundAmount));
+
+        return BookingResponse.from(booking);
+    }
+
+    /**
+     * Determines the refund amount based on the show's refund policy and how far
+     * in the future the show is. Falls back to the default policy if the show has
+     * none; returns ZERO if no policy exists at all.
+     *
+     * Logic: find the policy tier whose {@code hoursBeforeShow} is the largest
+     * value still ≤ hours remaining until the show. Sort candidates descending
+     * and take the first match.
+     */
+    private BigDecimal computeRefund(Booking booking) {
+        Show show = booking.getShow();
+        RefundPolicy policy = show.getRefundPolicy();
+        if (policy == null) {
+            policy = refundPolicyRepository.findByDefaultPolicyTrue().orElse(null);
+        }
+        if (policy == null || policy.getTiers().isEmpty()) {
+            return BigDecimal.ZERO;
+        }
+
+        long hoursUntilShow = ChronoUnit.HOURS.between(Instant.now(), show.getStartTime());
+        if (hoursUntilShow < 0) {
+            return BigDecimal.ZERO;
+        }
+
+        final long hours = hoursUntilShow;
+        int refundPercent = policy.getTiers().stream()
+                .filter(t -> t.getHoursBeforeShow() <= hours)
+                .max(Comparator.comparingInt(RefundTier::getHoursBeforeShow))
+                .map(RefundTier::getRefundPercent)
+                .orElse(0);
+
+        return booking.getFinalPrice()
+                .multiply(BigDecimal.valueOf(refundPercent))
+                .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
     }
 
     @Transactional(readOnly = true)

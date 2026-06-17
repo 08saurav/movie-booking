@@ -76,6 +76,12 @@ public class Booking {
     @Column(name = "confirmed_at")
     private Instant confirmedAt;
 
+    @Column(name = "refund_amount", precision = 10, scale = 2)
+    private BigDecimal refundAmount;
+
+    @Column(name = "cancelled_at")
+    private Instant cancelledAt;
+
     protected Booking() {}
 
     public Booking(String customer, Show show, ShowSeat showSeat, PricingTier pricingTier,
@@ -107,8 +113,10 @@ public class Booking {
         this.status = BookingStatus.PAYMENT_FAILED;
     }
 
-    public void cancel() {
+    public void cancel(BigDecimal refundAmount) {
         this.status = BookingStatus.CANCELLED;
+        this.refundAmount = refundAmount;
+        this.cancelledAt = Instant.now();
     }
 
     public Long getId() { return id; }
@@ -124,4 +132,6 @@ public class Booking {
     public String getIdempotencyKey() { return idempotencyKey; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getConfirmedAt() { return confirmedAt; }
+    public BigDecimal getRefundAmount() { return refundAmount; }
+    public Instant getCancelledAt() { return cancelledAt; }
 }

@@ -21,9 +21,11 @@ public record BookingResponse(
         BigDecimal discountAmount,
         BigDecimal finalPrice,
         BookingStatus status,
+        BigDecimal refundAmount,
         String idempotencyKey,
         Instant createdAt,
-        Instant confirmedAt
+        Instant confirmedAt,
+        Instant cancelledAt
 ) {
     public static BookingResponse from(Booking booking) {
         var seat = booking.getShowSeat().getSeat();
@@ -43,8 +45,10 @@ public record BookingResponse(
                 booking.getDiscountAmount(),
                 booking.getFinalPrice(),
                 booking.getStatus(),
+                booking.getRefundAmount(),
                 booking.getIdempotencyKey(),
                 booking.getCreatedAt(),
-                booking.getConfirmedAt());
+                booking.getConfirmedAt(),
+                booking.getCancelledAt());
     }
 }

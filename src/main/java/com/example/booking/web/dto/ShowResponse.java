@@ -17,7 +17,9 @@ public record ShowResponse(
         Instant startTime,
         Instant endTime,
         Long pricingTierId,
-        String pricingTierName
+        String pricingTierName,
+        Long refundPolicyId,
+        String refundPolicyName
 ) {
 
     public static ShowResponse from(Show show) {
@@ -25,6 +27,7 @@ public record ShowResponse(
         var theater = screen.getTheater();
         var city = theater.getCity();
         var tier = show.getPricingTier();
+        var policy = show.getRefundPolicy();
         return new ShowResponse(
                 show.getId(),
                 show.getMovie().getId(),
@@ -38,6 +41,8 @@ public record ShowResponse(
                 show.getStartTime(),
                 show.getEndTime(),
                 tier != null ? tier.getId() : null,
-                tier != null ? tier.getName() : null);
+                tier != null ? tier.getName() : null,
+                policy != null ? policy.getId() : null,
+                policy != null ? policy.getName() : null);
     }
 }

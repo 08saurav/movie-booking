@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+
 import java.util.List;
 
 /**
@@ -60,5 +61,13 @@ public class BookingController {
     @Operation(summary = "Get a booking by id", description = "Returns 404 if the booking belongs to a different customer.")
     public BookingResponse getById(@PathVariable Long id, Authentication authentication) {
         return bookingService.getForCustomer(id, authentication.getName());
+    }
+
+    @PostMapping("/{id}/cancel")
+    @Operation(summary = "Cancel a confirmed booking",
+            description = "Only CONFIRMED bookings can be cancelled. Refund amount is determined by the show's refund policy. "
+                    + "Returns 404 if the booking belongs to a different customer.")
+    public BookingResponse cancel(@PathVariable Long id, Authentication authentication) {
+        return bookingService.cancel(id, authentication.getName(), false);
     }
 }

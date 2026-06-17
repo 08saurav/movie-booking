@@ -19,6 +19,7 @@ import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
@@ -84,5 +85,12 @@ public class PricingAdminController {
             description = "Supports ?page=0&size=20&sort=createdAt,desc style pagination parameters.")
     public Page<BookingResponse> listBookings(@PageableDefault(size = 20) Pageable pageable) {
         return bookingService.listAll(pageable);
+    }
+
+    @PostMapping("/api/admin/bookings/{id}/cancel")
+    @Operation(summary = "Cancel any booking (ROLE_ADMIN)",
+            description = "Admins can cancel any CONFIRMED booking regardless of customer. Refund is computed per show's refund policy.")
+    public BookingResponse adminCancel(@PathVariable Long id) {
+        return bookingService.cancel(id, "admin", true);
     }
 }
