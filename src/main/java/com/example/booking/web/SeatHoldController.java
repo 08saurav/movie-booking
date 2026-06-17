@@ -3,6 +3,8 @@ package com.example.booking.web;
 import com.example.booking.service.SeatHoldService;
 import com.example.booking.web.dto.SeatHoldResponse;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -29,13 +31,14 @@ public class SeatHoldController {
         this.seatHoldService = seatHoldService;
     }
 
-    /**
-     * Hold a seat for time-bound booking. Returns 200 with hold details (including
-     * expiry time) if successful, or 409 if the seat is taken/held by someone else.
-     */
     @PostMapping("/api/shows/{showId}/seats/{seatId}/hold")
     @Operation(summary = "Hold a seat",
             description = "Hold a seat for this customer. Returns 200 with hold expiry time, or 409 if the seat is not available.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Hold created — seat reserved for this customer until holdExpiresAt"),
+        @ApiResponse(responseCode = "404", description = "Show or seat not found"),
+        @ApiResponse(responseCode = "409", description = "Seat is already held or booked — try a different seat")
+    })
     public ResponseEntity<SeatHoldResponse> holdSeat(
             @PathVariable Long showId,
             @PathVariable Long seatId,
@@ -45,14 +48,14 @@ public class SeatHoldController {
         return ResponseEntity.status(HttpStatus.OK).body(response);
     }
 
-    /**
-     * Release a hold early (customer cancels the hold before booking).
-     * Returns 204 No Content on success, or 404/409 if the hold doesn't exist
-     * or is held by a different customer.
-     */
     @DeleteMapping("/api/shows/{showId}/seats/{seatId}/hold")
     @Operation(summary = "Release a hold",
             description = "Release a hold on a seat you are holding. Returns 204 if successful.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "204", description = "Hold released — seat is now available for others"),
+        @ApiResponse(responseCode = "404", description = "Seat not found or not held by this customer"),
+        @ApiResponse(responseCode = "409", description = "Seat is not in HELD state")
+    })
     public ResponseEntity<Void> releaseSeat(
             @PathVariable Long showId,
             @PathVariable Long seatId,

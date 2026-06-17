@@ -4,6 +4,8 @@ import com.example.booking.service.BookingService;
 import com.example.booking.web.dto.BookingRequest;
 import com.example.booking.web.dto.BookingResponse;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -43,6 +45,11 @@ public class BookingController {
             description = "The seat must be in HELD state for this customer (via POST /api/shows/{showId}/seats/{seatId}/hold). "
                     + "X-Idempotency-Key is required: re-submitting the same key returns the existing booking. "
                     + "Returns CONFIRMED on payment success or PAYMENT_FAILED on payment failure (seat released).")
+    @ApiResponses({
+        @ApiResponse(responseCode = "201", description = "Booking created — status CONFIRMED or PAYMENT_FAILED"),
+        @ApiResponse(responseCode = "400", description = "Seat not held by you, hold expired, or show has no pricing tier"),
+        @ApiResponse(responseCode = "409", description = "Concurrent seat state change — retry with a fresh hold")
+    })
     public ResponseEntity<BookingResponse> book(
             @Valid @RequestBody BookingRequest request,
             @RequestHeader("X-Idempotency-Key") String idempotencyKey,
@@ -67,6 +74,11 @@ public class BookingController {
     @Operation(summary = "Cancel a confirmed booking",
             description = "Only CONFIRMED bookings can be cancelled. Refund amount is determined by the show's refund policy. "
                     + "Returns 404 if the booking belongs to a different customer.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Booking cancelled — refundAmount reflects the applicable refund tier"),
+        @ApiResponse(responseCode = "400", description = "Booking is not in CONFIRMED status"),
+        @ApiResponse(responseCode = "404", description = "Booking not found or belongs to a different customer")
+    })
     public BookingResponse cancel(@PathVariable Long id, Authentication authentication) {
         return bookingService.cancel(id, authentication.getName(), false);
     }

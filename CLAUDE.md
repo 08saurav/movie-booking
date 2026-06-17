@@ -116,3 +116,16 @@ avoid LazyInitializationException on the async thread. `CancellationAndNotificat
 and proves the listener runs on a background thread using a static
 `LinkedBlockingQueue` (blocking `poll()` is deterministic regardless of Spring's
 CGLIB proxy wrapping). `mvn test` passes all 28 tests on real PostgreSQL.
+
+Segment 6 (Hardening & Polish) complete: `@EnableSpringDataWebSupport(VIA_DTO)`
+eliminates the `PageImpl` serialization warning and produces a stable JSON page
+shape. `@ApiResponse` annotations added to `SeatHoldController` and
+`BookingController` documenting the 200/201/204/400/404/409 responses visible
+in Swagger UI. `FullFlowIntegrationTest` (3 tests) exercises the complete
+customer journey against seeded data — browse cities/theaters/shows/seats →
+hold → book → cancel with refund — plus the payment-failure path (seat returns
+to AVAILABLE) and the expired-hold rejection (409). `CatalogBrowseTest` is
+protected from cross-test state by restoring expired holds to AVAILABLE in a
+finally block. README updated to cover all six segments including the
+cancellation/refund API and the async notification design. `mvn test` passes
+all 31 tests on real PostgreSQL.

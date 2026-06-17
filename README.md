@@ -4,8 +4,7 @@ A backend for a movie ticket booking system: multiple cities, theaters, screens,
 and shows, with seat-level booking, time-bound seat holds, pricing tiers and
 discounts, payment, confirmation, and policy-based refunds. Built with Spring Boot.
 
-> This README is maintained incrementally as the system is built segment by
-> segment. It currently reflects **Segment 4 (Pricing, Discounts, Payment & Confirmation)**.
+> This README reflects the completed system through **Segment 6 (Hardening & Polish)**.
 
 ## Tech stack
 
@@ -66,7 +65,7 @@ In Swagger UI, click **Authorize**, enter one of the credential pairs above, the
 - `GET /api/ping` — succeeds for any authenticated user; returns 401 when anonymous.
 - `GET /api/admin/ping` — succeeds only for `admin`; returns 403 for `customer`.
 
-#### Walk through the full booking flow (Segment 4)
+#### Walk through the full booking flow
 
 1. **Browse** as `customer`: `GET /api/cities` → city id → `GET /api/cities/{id}/theaters`
    → theater id → `GET /api/theaters/{id}/shows` → note the `showId` and the `pricingTierId`
@@ -84,6 +83,9 @@ In Swagger UI, click **Authorize**, enter one of the credential pairs above, the
    `POST /api/admin/pricing-tiers` — create custom tiers.
 8. **Discount codes**: `POST /api/admin/discount-codes` with `discountType: PERCENTAGE` and
    `value: 10` — creates a 10% off code. Use `"discountCode": "<code>"` in step 3 to apply it.
+9. **Cancel**: `POST /api/bookings/{id}/cancel` (as `customer`) — cancels a CONFIRMED booking.
+   Returns the updated booking with `status: CANCELLED`, `cancelledAt`, and `refundAmount`.
+   Admins can cancel any booking via `POST /api/admin/bookings/{id}/cancel`.
 
 ##### Payment failure path
 
@@ -229,7 +231,33 @@ Hold TTL is configurable via `booking.seat-hold-ttl-minutes` (default 10 minutes
 | `GET /api/admin/pricing-tiers` | admin | List all tiers. |
 | `POST /api/admin/discount-codes` | admin | Create a discount code (PERCENTAGE or FLAT, with optional maxUses and validity window). |
 | `GET /api/admin/discount-codes` | admin | List all codes. |
-| `GET /api/admin/bookings` | admin | Paginated list of all bookings (supports `?page=0&size=20`). |
+| `GET /api/admin/bookings` | admin | Paginated list of all bookings (`?page=0&size=20&sort=createdAt,desc`). |
+
+## Cancellation & refunds API (Segment 5)
+
+| Endpoint | Role | Notes |
+|---|---|---|
+| `POST /api/bookings/{id}/cancel` | customer | Cancel own CONFIRMED booking. Refund computed by show's refund policy. |
+| `POST /api/admin/bookings/{id}/cancel` | admin | Cancel any CONFIRMED booking regardless of owner. |
+| `POST /api/admin/refund-policies` | admin | Create a refund policy with tiers (hoursBeforeShow → refundPercent). |
+| `GET /api/admin/refund-policies` | admin | List all refund policies. |
+| `PUT /api/admin/refund-policies/{id}` | admin | Update a refund policy's tiers. |
+
+### Refund policy model
+
+Each `RefundPolicy` has a list of tiers, each with `hoursBeforeShow` and `refundPercent`. The system finds the tier with the **largest** `hoursBeforeShow` that is still ≤ hours until show start, and applies that tier's refund percentage. Example for the seeded policy:
+
+| Hours before show | Refund |
+|---|---|
+| ≥ 24 h | 100% |
+| ≥ 12 h | 50% |
+| < 12 h | 0% |
+
+Shows carry an optional `refundPolicyId`; if not set, the default policy (marked `isDefault = true`) is used. V6 seeds one default policy and assigns it to all V3 shows.
+
+### Async notifications
+
+Booking confirmation and cancellation trigger email notifications via `@TransactionalEventListener(AFTER_COMMIT) + @Async`. The HTTP response is returned before the notification fires. The notification thread pool is named `notification-*` and is configurable via `AsyncConfig`.
 
 ### Pricing model
 
@@ -376,5 +404,5 @@ The system is built in reviewable segments:
 2. **Catalog & browse** — domain model, admin CRUD, customer browse, seed data. _(done)_
 3. **Seat inventory & concurrency core** — atomic seat holds, auto-expiry, the double-booking test. _(done)_
 4. **Pricing, discounts, payment, confirmation** — booking state machine end to end. _(done)_
-5. **Cancellation, refunds, notifications** — policy-based refunds, async notifications. _(pending)_
-6. **Hardening & polish** — validation, error handling, remaining tests, final docs. _(pending)_
+5. **Cancellation, refunds, notifications** — policy-based refunds, async notifications. _(done)_
+6. **Hardening & polish** — `@ApiResponse` Swagger docs, `@EnableSpringDataWebSupport`, full E2E integration test, README finalization. _(done)_
