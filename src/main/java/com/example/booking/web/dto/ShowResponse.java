@@ -15,13 +15,16 @@ public record ShowResponse(
         Long cityId,
         String cityName,
         Instant startTime,
-        Instant endTime
+        Instant endTime,
+        Long pricingTierId,
+        String pricingTierName
 ) {
 
     public static ShowResponse from(Show show) {
         var screen = show.getScreen();
         var theater = screen.getTheater();
         var city = theater.getCity();
+        var tier = show.getPricingTier();
         return new ShowResponse(
                 show.getId(),
                 show.getMovie().getId(),
@@ -33,6 +36,8 @@ public record ShowResponse(
                 city.getId(),
                 city.getName(),
                 show.getStartTime(),
-                show.getEndTime());
+                show.getEndTime(),
+                tier != null ? tier.getId() : null,
+                tier != null ? tier.getName() : null);
     }
 }

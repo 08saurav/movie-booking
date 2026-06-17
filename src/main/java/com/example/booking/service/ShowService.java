@@ -1,6 +1,7 @@
 package com.example.booking.service;
 
 import com.example.booking.domain.Movie;
+import com.example.booking.domain.PricingTier;
 import com.example.booking.domain.Screen;
 import com.example.booking.domain.Seat;
 import com.example.booking.domain.Show;
@@ -8,6 +9,7 @@ import com.example.booking.domain.ShowSeat;
 import com.example.booking.domain.ShowSeatStatus;
 import com.example.booking.exception.ResourceNotFoundException;
 import com.example.booking.repository.MovieRepository;
+import com.example.booking.repository.PricingTierRepository;
 import com.example.booking.repository.ScreenRepository;
 import com.example.booking.repository.SeatRepository;
 import com.example.booking.repository.ShowRepository;
@@ -39,16 +41,19 @@ public class ShowService {
     private final SeatRepository seatRepository;
     private final ShowSeatRepository showSeatRepository;
     private final TheaterRepository theaterRepository;
+    private final PricingTierRepository pricingTierRepository;
 
     public ShowService(ShowRepository showRepository, MovieRepository movieRepository,
                         ScreenRepository screenRepository, SeatRepository seatRepository,
-                        ShowSeatRepository showSeatRepository, TheaterRepository theaterRepository) {
+                        ShowSeatRepository showSeatRepository, TheaterRepository theaterRepository,
+                        PricingTierRepository pricingTierRepository) {
         this.showRepository = showRepository;
         this.movieRepository = movieRepository;
         this.screenRepository = screenRepository;
         this.seatRepository = seatRepository;
         this.showSeatRepository = showSeatRepository;
         this.theaterRepository = theaterRepository;
+        this.pricingTierRepository = pricingTierRepository;
     }
 
     public ShowResponse create(ShowRequest request) {
@@ -56,7 +61,13 @@ public class ShowService {
         Screen screen = findScreenOrThrow(request.screenId());
         Instant endTime = request.startTime().plus(Duration.ofMinutes(movie.getDurationMinutes()));
 
-        Show show = showRepository.save(new Show(movie, screen, request.startTime(), endTime));
+        PricingTier pricingTier = null;
+        if (request.pricingTierId() != null) {
+            pricingTier = pricingTierRepository.findById(request.pricingTierId())
+                    .orElseThrow(() -> new ResourceNotFoundException("PricingTier " + request.pricingTierId() + " not found"));
+        }
+
+        Show show = showRepository.save(new Show(movie, screen, request.startTime(), endTime, pricingTier));
 
         List<Seat> seats = seatRepository.findByScreenIdOrderByRowLabelAscSeatNumberAsc(screen.getId());
         List<ShowSeat> showSeats = seats.stream()
@@ -100,13 +111,17 @@ public class ShowService {
                 .toList();
     }
 
-    /** Available-only seat inventory for a show (browse). 404s if the show doesn't exist. */
+    /**
+     * Seat inventory for a show with real-time status (AVAILABLE/HELD/BOOKED/CANCELLED).
+     * Segment 3: now shows all seats with their status, not just AVAILABLE.
+     * 404s if the show doesn't exist.
+     */
     @Transactional(readOnly = true)
-    public List<ShowSeatResponse> getAvailableSeats(Long showId) {
+    public List<ShowSeatResponse> getSeatsWithStatus(Long showId) {
         if (!showRepository.existsById(showId)) {
             throw new ResourceNotFoundException("Show " + showId + " not found");
         }
-        return showSeatRepository.findByShowIdAndStatus(showId, ShowSeatStatus.AVAILABLE).stream()
+        return showSeatRepository.findByShowId(showId).stream()
                 .map(ShowSeatResponse::from)
                 .toList();
     }

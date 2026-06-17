@@ -101,7 +101,7 @@ class CatalogAdminTest extends AbstractIntegrationTest {
         // 5. Show: endTime must be startTime + duration.
         Instant startTime = Instant.now().plus(2, ChronoUnit.DAYS).truncatedTo(ChronoUnit.SECONDS);
         ShowResponse show = asAdmin()
-                .postForEntity("/api/admin/shows", new ShowRequest(movieId, screenId, startTime), ShowResponse.class)
+                .postForEntity("/api/admin/shows", new ShowRequest(movieId, screenId, startTime, null), ShowResponse.class)
                 .getBody();
         assertThat(show.startTime()).isEqualTo(startTime);
         assertThat(show.endTime()).isEqualTo(startTime.plus(Duration.ofMinutes(120)));

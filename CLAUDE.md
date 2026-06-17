@@ -69,3 +69,31 @@ data-integrity/unexpected errors. `mvn test` passes (15 tests, real Postgres
 via Testcontainers using the "singleton container" pattern — see
 `AbstractIntegrationTest`'s Javadoc for why the naive `@Testcontainers`/
 `@Container` combo broke across multiple test classes).
+
+Segment 3 (Seat Inventory & Concurrency Core) complete: atomic conditional
+UPDATE closes the TOCTOU race window entirely at the database level. Migration
+`V4__segment3_concurrency.sql` adds `held_by` and `hold_expires_at` columns
+to `show_seats`. `SeatHoldService` orchestrates the hold logic; `SeatHoldController`
+exposes POST/DELETE endpoints. Holds are configurable (default 10 minutes) and
+automatically swept every minute by `HoldExpirySweeperTask`. `GET /api/shows/{id}/seats`
+now returns all seats with real-time status (AVAILABLE/HELD/BOOKED/CANCELLED).
+`SeatHoldConcurrencyTest` verifies exactly 1 of N concurrent hold attempts
+succeeds (HTTP 200) and N-1 fail with 409 Conflict. `mvn test` passes all 16
+tests including the concurrency test on real PostgreSQL.
+
+Segment 4 (Pricing, Discounts, Payment & Confirmation) complete: Migration
+`V5__segment4_pricing_bookings.sql` adds `pricing_tiers`, `discount_codes`, and
+`bookings` tables; also adds nullable `pricing_tier_id` FK to `shows`. A seeded
+"Standard" tier (regular ₹150, premium ₹250, weekend ×1.25) is assigned to all
+V3 shows so they are immediately bookable. `BookingService` implements the full
+state machine: HELD→BOOKED→CONFIRMED/PAYMENT_FAILED. The seat transitions
+HELD→BOOKED atomically before payment so the sweeper cannot expire it during
+processing; on failure the seat is released to AVAILABLE. `PricingService`
+computes base×weekendMultiplier×(1−discount). Discount code use-count increments
+are serialized via a pessimistic write lock (`PESSIMISTIC_WRITE`). Idempotency
+is enforced by a `UNIQUE(idempotency_key)` constraint; re-submitting the same
+key returns the existing booking. `MockPaymentGatewayImpl` supports toggling
+failure via `booking.payment.always-fail` or the `setAlwaysFail` method (for
+tests without Spring context restarts). `BookingFlowTest` (7 tests) covers
+happy path, idempotency, payment failure, discount codes, admin/customer list
+views. `mvn test` passes all 23 tests on real PostgreSQL.

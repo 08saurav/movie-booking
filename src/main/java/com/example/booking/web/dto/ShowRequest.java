@@ -8,6 +8,7 @@ import java.time.Instant;
 public record ShowRequest(
         @NotNull Long movieId,
         @NotNull Long screenId,
-        @NotNull @Future Instant startTime
+        @NotNull @Future Instant startTime,
+        Long pricingTierId
 ) {
 }

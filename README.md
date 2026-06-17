@@ -5,7 +5,7 @@ and shows, with seat-level booking, time-bound seat holds, pricing tiers and
 discounts, payment, confirmation, and policy-based refunds. Built with Spring Boot.
 
 > This README is maintained incrementally as the system is built segment by
-> segment. It currently reflects **Segment 2 (Catalog & Browse)**.
+> segment. It currently reflects **Segment 4 (Pricing, Discounts, Payment & Confirmation)**.
 
 ## Tech stack
 
@@ -65,6 +65,34 @@ In Swagger UI, click **Authorize**, enter one of the credential pairs above, the
 
 - `GET /api/ping` — succeeds for any authenticated user; returns 401 when anonymous.
 - `GET /api/admin/ping` — succeeds only for `admin`; returns 403 for `customer`.
+
+#### Walk through the full booking flow (Segment 4)
+
+1. **Browse** as `customer`: `GET /api/cities` → city id → `GET /api/cities/{id}/theaters`
+   → theater id → `GET /api/theaters/{id}/shows` → note the `showId` and the `pricingTierId`
+   → `GET /api/shows/{id}/seats` → pick an AVAILABLE seat, note its `showSeatId`.
+2. **Hold** the seat: `POST /api/shows/{showId}/seats/{showSeatId}/hold` (as `customer`).
+   Returns the hold expiry time (10 minutes by default).
+3. **Book** it: `POST /api/bookings` with header `X-Idempotency-Key: <any UUID>` and body
+   `{ "showId": ..., "showSeatId": ..., "discountCode": null }`.
+   Returns a booking with `status: CONFIRMED` and a `finalPrice`.
+4. **Idempotency**: re-submit the same `X-Idempotency-Key` — the same booking is returned
+   without reprocessing or re-charging.
+5. **View history**: `GET /api/bookings` (as `customer`) — your bookings, newest first.
+6. **Admin view**: `GET /api/admin/bookings?page=0&size=20` — paginated list of all bookings.
+7. **Pricing tiers**: `GET /api/admin/pricing-tiers` — lists the seeded "Standard" tier.
+   `POST /api/admin/pricing-tiers` — create custom tiers.
+8. **Discount codes**: `POST /api/admin/discount-codes` with `discountType: PERCENTAGE` and
+   `value: 10` — creates a 10% off code. Use `"discountCode": "<code>"` in step 3 to apply it.
+
+##### Payment failure path
+
+Set `booking.payment.always-fail: true` in `application.yml` and restart. The booking will
+return `status: PAYMENT_FAILED` and the seat will revert to `AVAILABLE`. (Reset to `false`
+for normal operation.)
+
+Alternatively, any booking whose `finalPrice` is exactly `0.01` triggers a failure without
+restarting, useful for targeted debugging.
 
 #### Walk through the catalog (Segment 2)
 
@@ -179,7 +207,60 @@ be its own source of bugs.
 | `GET /api/cities` | any authenticated user | |
 | `GET /api/cities/{id}/theaters` | any authenticated user | |
 | `GET /api/theaters/{id}/shows` | any authenticated user | Upcoming shows only, soonest first |
-| `GET /api/shows/{id}/seats` | any authenticated user | `AVAILABLE` seats only |
+| `GET /api/shows/{id}/seats` | any authenticated user | All seats with real-time status (Segment 3) |
+
+## Seat holds API (Segment 3)
+
+| Endpoint | Role | Notes |
+|---|---|---|
+| `POST /api/shows/{showId}/seats/{seatId}/hold` | customer | Atomic conditional UPDATE prevents double-booking. Returns 200 with hold details (expiry time), or 409 if unavailable. |
+| `DELETE /api/shows/{showId}/seats/{seatId}/hold` | customer | Release a hold early. Returns 204 on success. |
+
+Hold TTL is configurable via `booking.seat-hold-ttl-minutes` (default 10 minutes) in `application.yml`. Expired holds are auto-swept every minute.
+
+## Booking & pricing API (Segment 4)
+
+| Endpoint | Role | Notes |
+|---|---|---|
+| `POST /api/bookings` | customer | Header `X-Idempotency-Key` required. Requires a HELD seat for this customer. Returns CONFIRMED or PAYMENT_FAILED. |
+| `GET /api/bookings` | customer | Booking history, newest first. |
+| `GET /api/bookings/{id}` | customer | Single booking; 404 if it belongs to someone else. |
+| `POST /api/admin/pricing-tiers` | admin | Create a pricing tier (regularPrice, premiumPrice, weekendMultiplier ≥ 1.00). |
+| `GET /api/admin/pricing-tiers` | admin | List all tiers. |
+| `POST /api/admin/discount-codes` | admin | Create a discount code (PERCENTAGE or FLAT, with optional maxUses and validity window). |
+| `GET /api/admin/discount-codes` | admin | List all codes. |
+| `GET /api/admin/bookings` | admin | Paginated list of all bookings (supports `?page=0&size=20`). |
+
+### Pricing model
+
+```
+finalPrice = basePrice × weekendMultiplier (if Sat/Sun UTC) × (1 − discountFraction)
+```
+
+- `basePrice` = `pricingTier.regularPrice` or `pricingTier.premiumPrice` based on the seat's category.
+- Weekend is determined by the show's `startTime` in UTC.
+- `FLAT` discounts are capped at `basePrice` (no negative totals).
+- A show without a pricing tier returns 400 if booking is attempted.
+
+### Booking state machine
+
+```
+HELD seat → POST /api/bookings → PAYMENT_PENDING (seat transitions to BOOKED)
+  → payment success → CONFIRMED (seat stays BOOKED)
+  → payment failure → PAYMENT_FAILED (seat released back to AVAILABLE)
+```
+
+Moving the seat to `BOOKED` before calling the payment gateway prevents the hold-expiry sweeper from reclaiming the seat during payment processing.
+
+### Idempotency
+
+`X-Idempotency-Key` is required on `POST /api/bookings`. If a booking with that key already exists, it is returned immediately without re-processing. Keys should be unique per booking attempt (UUID v4 recommended). The `UNIQUE` constraint on `bookings.idempotency_key` also prevents duplicate processing if two requests with the same key race to the database.
+
+### Double-booking backstop
+
+Two layers prevent double-booking:
+1. **Segment 3**: atomic conditional UPDATE closes the TOCTOU window on the hold.
+2. **Segment 4**: `UNIQUE(show_seat_id)` on the `bookings` table — even if the application logic had a flaw, the database would reject a second confirmed booking for the same show-seat.
 
 ## Test
 
@@ -222,6 +303,25 @@ application containerization/deployment that the brief lists as out of scope.
    only authentication, not `ROLE_ADMIN` — both `admin` and `customer` can
    browse, per `SecurityConfig`'s existing "admin-only under `/api/admin/**`,
    authenticated everywhere else" rule.
+10. Seat holds are time-bound and automatically expired: an admin-configurable
+    TTL (default 10 minutes) governs how long a customer can hold a seat before
+    booking or releasing it. Expired holds are swept back to `AVAILABLE` every
+    minute. Lazy expiry in the hold UPDATE WHERE clause ensures correctness
+    (no concurrent thread can acquire an expired hold); the sweeper handles
+    clean state for accurate reporting.
+11. A show's `pricingTier` is a nullable FK. A show created without one can
+    still be scheduled and browsed, but a booking attempt returns 400 with a
+    clear message. The V5 migration seeds a "Standard" tier and assigns it to
+    all V3 shows so the demo data is immediately bookable.
+12. `DiscountCode.maxUses = null` means unlimited use. The `current_uses` count
+    is incremented inside the booking transaction under a pessimistic write lock
+    so concurrent bookings can't both read `0` and both claim the last use of a
+    single-use code.
+13. The payment gateway is a mock. No real charges are made. Mock failure can
+    be triggered by setting `booking.payment.always-fail=true` or by booking a
+    seat whose computed `finalPrice` is exactly `0.01`. The gateway abstraction
+    (`PaymentGateway` interface) allows a real gateway to be substituted without
+    changing booking logic.
 
 ## Design decisions
 
@@ -245,9 +345,21 @@ application containerization/deployment that the brief lists as out of scope.
    blocks deletion with a `409`. This was chosen over cascading everything
    (which would silently destroy show history) or restricting everything
    (which would make tearing down test/seed data tedious).
-4. The seat-booking concurrency strategy (Segment 3) and the comparison of
-   locking approaches (pessimistic `SELECT FOR UPDATE`, optimistic `@Version`,
-   atomic conditional `UPDATE`) will be documented here once that segment lands.
+4. **Atomic conditional UPDATE for race-free seat holds (Segment 3).** The hold
+   operation uses a single `UPDATE` statement with a `WHERE` clause that checks
+   availability: `UPDATE show_seats SET status='HELD', held_by=:userId, hold_expires_at=:expiresAt
+   WHERE id=:seatId AND (status='AVAILABLE' OR (status='HELD' AND hold_expires_at < now()))`.
+   The database serializes concurrent attempts at the WHERE clause level, closing
+   the TOCTOU (time-of-check to time-of-use) window entirely. No application-level
+   locking needed. Comparison of three approaches:
+   - **Pessimistic locking** (`SELECT FOR UPDATE`): acquires an exclusive lock,
+     blocking other readers until commit. Works but causes contention under load.
+   - **Optimistic locking** (`@Version`): assumes collisions are rare; aborts if
+     the entity changed since load. Simple but requires retry logic at the caller.
+   - **Atomic conditional UPDATE** (chosen): the WHERE clause is the availability
+     check; the database guarantees at most one thread changes it. No application
+     retries, no locks held across requests, and full visibility (409 vs 200 tells
+     you immediately if you lost). Fastest, clearest, and scales to high concurrency.
 
 ## Out of scope
 
@@ -261,8 +373,8 @@ production-grade observability/monitoring/alerting.
 The system is built in reviewable segments:
 
 1. **Foundation** — runnable, secured, Swagger-visible skeleton with DB + Flyway. _(done)_
-2. **Catalog & browse** — domain model, admin CRUD, customer browse, seed data. _(current)_
-3. **Seat inventory & concurrency core** — atomic seat holds, auto-expiry, the double-booking test.
-4. **Pricing, discounts, payment, confirmation** — booking state machine end to end.
-5. **Cancellation, refunds, notifications** — policy-based refunds, async notifications.
-6. **Hardening & polish** — validation, error handling, remaining tests, final docs.
+2. **Catalog & browse** — domain model, admin CRUD, customer browse, seed data. _(done)_
+3. **Seat inventory & concurrency core** — atomic seat holds, auto-expiry, the double-booking test. _(done)_
+4. **Pricing, discounts, payment, confirmation** — booking state machine end to end. _(done)_
+5. **Cancellation, refunds, notifications** — policy-based refunds, async notifications. _(pending)_
+6. **Hardening & polish** — validation, error handling, remaining tests, final docs. _(pending)_

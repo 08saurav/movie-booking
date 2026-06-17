@@ -13,6 +13,7 @@ import jakarta.persistence.Table;
 
 import java.time.Instant;
 
+
 /**
  * {@code movie}/{@code screen} are fixed at creation: a show's per-show seat
  * inventory ({@link ShowSeat}) is generated once from the screen's seats, so
@@ -37,6 +38,10 @@ public class Show {
     @JoinColumn(name = "screen_id", nullable = false)
     private Screen screen;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "pricing_tier_id")
+    private PricingTier pricingTier;
+
     @Column(name = "start_time", nullable = false)
     private Instant startTime;
 
@@ -51,10 +56,15 @@ public class Show {
     }
 
     public Show(Movie movie, Screen screen, Instant startTime, Instant endTime) {
+        this(movie, screen, startTime, endTime, null);
+    }
+
+    public Show(Movie movie, Screen screen, Instant startTime, Instant endTime, PricingTier pricingTier) {
         this.movie = movie;
         this.screen = screen;
         this.startTime = startTime;
         this.endTime = endTime;
+        this.pricingTier = pricingTier;
     }
 
     @PrePersist
@@ -80,6 +90,14 @@ public class Show {
 
     public Instant getEndTime() {
         return endTime;
+    }
+
+    public PricingTier getPricingTier() {
+        return pricingTier;
+    }
+
+    public void assignPricingTier(PricingTier tier) {
+        this.pricingTier = tier;
     }
 
     public void reschedule(Instant startTime, Instant endTime) {
