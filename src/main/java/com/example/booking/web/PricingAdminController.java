@@ -1,9 +1,12 @@
 package com.example.booking.web;
 
+import com.example.booking.domain.BookingStatus;
 import com.example.booking.domain.DiscountCode;
+import com.example.booking.domain.DiscountType;
 import com.example.booking.domain.PricingTier;
 import com.example.booking.repository.DiscountCodeRepository;
 import com.example.booking.repository.PricingTierRepository;
+import com.example.booking.repository.spec.DiscountCodeSpec;
 import com.example.booking.service.BookingService;
 import com.example.booking.web.dto.BookingResponse;
 import com.example.booking.web.dto.DiscountCodeRequest;
@@ -15,15 +18,20 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.web.PageableDefault;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.LocalDate;
 import java.util.List;
 
 /**
@@ -58,9 +66,14 @@ public class PricingAdminController {
     }
 
     @GetMapping("/api/admin/pricing-tiers")
-    @Operation(summary = "List all pricing tiers (ROLE_ADMIN)")
-    public List<PricingTierResponse> listPricingTiers() {
-        return pricingTierRepository.findAll().stream().map(PricingTierResponse::from).toList();
+    @Operation(summary = "List pricing tiers (ROLE_ADMIN)",
+            description = "Optional filter: name (partial).")
+    public List<PricingTierResponse> listPricingTiers(
+            @RequestParam(required = false) String name) {
+        List<PricingTier> tiers = (name != null && !name.isBlank())
+                ? pricingTierRepository.findByNameContainingIgnoreCase(name)
+                : pricingTierRepository.findAll(Sort.by("name"));
+        return tiers.stream().map(PricingTierResponse::from).toList();
     }
 
     @PostMapping("/api/admin/discount-codes")
@@ -74,17 +87,33 @@ public class PricingAdminController {
     }
 
     @GetMapping("/api/admin/discount-codes")
-    @Operation(summary = "List all discount codes (ROLE_ADMIN)")
-    public List<DiscountCodeResponse> listDiscountCodes() {
-        return discountCodeRepository.findAllByOrderByCreatedAtDesc().stream()
-                .map(DiscountCodeResponse::from).toList();
+    @Operation(summary = "List discount codes (ROLE_ADMIN)",
+            description = "Optional filters: active (true/false), discountType (PERCENTAGE/FLAT), code (partial). All combinable.")
+    public List<DiscountCodeResponse> listDiscountCodes(
+            @RequestParam(required = false) Boolean active,
+            @RequestParam(required = false) DiscountType discountType,
+            @RequestParam(required = false) String code) {
+        Specification<DiscountCode> spec = Specification
+                .where(DiscountCodeSpec.activeEq(active))
+                .and(DiscountCodeSpec.discountTypeEq(discountType))
+                .and(DiscountCodeSpec.codeLike(code));
+        return discountCodeRepository.findAll(spec, Sort.by("createdAt").descending())
+                .stream().map(DiscountCodeResponse::from).toList();
     }
 
     @GetMapping("/api/admin/bookings")
     @Operation(summary = "List all bookings with pagination (ROLE_ADMIN)",
-            description = "Supports ?page=0&size=20&sort=createdAt,desc style pagination parameters.")
-    public Page<BookingResponse> listBookings(@PageableDefault(size = 20) Pageable pageable) {
-        return bookingService.listAll(pageable);
+            description = "Supports ?page=0&size=20&sort=createdAt,desc style pagination. "
+                    + "Optional filters: status (CONFIRMED/PAYMENT_FAILED/CANCELLED/PAYMENT_PENDING), "
+                    + "customer (exact username), showId, from/to (YYYY-MM-DD booking date range).")
+    public Page<BookingResponse> listBookings(
+            @PageableDefault(size = 20) Pageable pageable,
+            @RequestParam(required = false) BookingStatus status,
+            @RequestParam(required = false) String customer,
+            @RequestParam(required = false) Long showId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return bookingService.listAll(pageable, status, customer, showId, from, to);
     }
 
     @PostMapping("/api/admin/bookings/{id}/cancel")

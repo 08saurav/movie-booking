@@ -7,6 +7,7 @@ import com.example.booking.web.dto.ShowResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -16,8 +17,10 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.LocalDate;
 import java.util.List;
 
 @RestController
@@ -60,8 +63,20 @@ public class ShowAdminController {
     }
 
     @GetMapping
-    @Operation(summary = "List all shows")
-    public List<ShowResponse> listAll() {
-        return showService.listAll();
+    @Operation(summary = "List shows",
+            description = "Optional filters: movieId, screenId, theaterId, cityId, "
+                    + "date (YYYY-MM-DD — shows on that exact day), "
+                    + "from/to (YYYY-MM-DD — show start window), language, genre. All combinable.")
+    public List<ShowResponse> listAll(
+            @RequestParam(required = false) Long movieId,
+            @RequestParam(required = false) Long screenId,
+            @RequestParam(required = false) Long theaterId,
+            @RequestParam(required = false) Long cityId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(required = false) String language,
+            @RequestParam(required = false) String genre) {
+        return showService.listAll(movieId, screenId, theaterId, cityId, date, from, to, language, genre);
     }
 }

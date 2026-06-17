@@ -63,9 +63,12 @@ public class ScreenAdminController {
     }
 
     @GetMapping
-    @Operation(summary = "List screens", description = "Optionally filter by theaterId.")
-    public List<ScreenResponse> listAll(@RequestParam(required = false) Long theaterId) {
-        return screenService.listAll(theaterId);
+    @Operation(summary = "List screens",
+            description = "Optional filters: theaterId, name (partial). All combinable.")
+    public List<ScreenResponse> listAll(
+            @RequestParam(required = false) Long theaterId,
+            @RequestParam(required = false) String name) {
+        return screenService.listAll(theaterId, name);
     }
 
     @GetMapping("/{id}/seats")

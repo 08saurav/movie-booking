@@ -58,8 +58,11 @@ public class TheaterAdminController {
     }
 
     @GetMapping
-    @Operation(summary = "List theaters", description = "Optionally filter by cityId.")
-    public List<TheaterResponse> listAll(@RequestParam(required = false) Long cityId) {
-        return theaterService.listAll(cityId);
+    @Operation(summary = "List theaters",
+            description = "Optional filters: cityId, name (partial). All combinable.")
+    public List<TheaterResponse> listAll(
+            @RequestParam(required = false) Long cityId,
+            @RequestParam(required = false) String name) {
+        return theaterService.listAll(cityId, name);
     }
 }

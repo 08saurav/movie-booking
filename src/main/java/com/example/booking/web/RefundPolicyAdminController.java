@@ -4,11 +4,14 @@ import com.example.booking.domain.RefundPolicy;
 import com.example.booking.domain.RefundTier;
 import com.example.booking.exception.ResourceNotFoundException;
 import com.example.booking.repository.RefundPolicyRepository;
+import com.example.booking.repository.spec.RefundPolicySpec;
 import com.example.booking.web.dto.RefundPolicyRequest;
 import com.example.booking.web.dto.RefundPolicyResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -17,6 +20,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -51,9 +55,16 @@ public class RefundPolicyAdminController {
     }
 
     @GetMapping
-    @Operation(summary = "List all refund policies (ROLE_ADMIN)")
-    public List<RefundPolicyResponse> list() {
-        return refundPolicyRepository.findAll().stream().map(RefundPolicyResponse::from).toList();
+    @Operation(summary = "List refund policies (ROLE_ADMIN)",
+            description = "Optional filters: isDefault (true/false), name (partial). All combinable.")
+    public List<RefundPolicyResponse> list(
+            @RequestParam(required = false) Boolean isDefault,
+            @RequestParam(required = false) String name) {
+        Specification<RefundPolicy> spec = Specification
+                .where(RefundPolicySpec.isDefault(isDefault))
+                .and(RefundPolicySpec.nameLike(name));
+        return refundPolicyRepository.findAll(spec, Sort.by("name")).stream()
+                .map(RefundPolicyResponse::from).toList();
     }
 
     @PutMapping("/{id}")

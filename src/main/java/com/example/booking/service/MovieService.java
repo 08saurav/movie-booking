@@ -3,8 +3,11 @@ package com.example.booking.service;
 import com.example.booking.domain.Movie;
 import com.example.booking.exception.ResourceNotFoundException;
 import com.example.booking.repository.MovieRepository;
+import com.example.booking.repository.spec.MovieSpec;
 import com.example.booking.web.dto.MovieRequest;
 import com.example.booking.web.dto.MovieResponse;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -47,8 +50,13 @@ public class MovieService {
     }
 
     @Transactional(readOnly = true)
-    public List<MovieResponse> listAll() {
-        return movieRepository.findAll().stream().map(MovieResponse::from).toList();
+    public List<MovieResponse> listAll(String title, String language, String genre, String rating) {
+        Specification<Movie> spec = Specification
+                .where(MovieSpec.titleLike(title))
+                .and(MovieSpec.languageEq(language))
+                .and(MovieSpec.genreEq(genre))
+                .and(MovieSpec.ratingEq(rating));
+        return movieRepository.findAll(spec, Sort.by("title")).stream().map(MovieResponse::from).toList();
     }
 
     private Movie findMovieOrThrow(Long id) {

@@ -20,17 +20,21 @@ import com.example.booking.repository.DiscountCodeRepository;
 import com.example.booking.repository.RefundPolicyRepository;
 import com.example.booking.repository.ShowRepository;
 import com.example.booking.repository.ShowSeatRepository;
+import com.example.booking.repository.spec.BookingSpec;
 import com.example.booking.web.dto.BookingRequest;
 import com.example.booking.web.dto.BookingResponse;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
 import java.util.List;
@@ -222,8 +226,14 @@ public class BookingService {
     }
 
     @Transactional(readOnly = true)
-    public List<BookingResponse> listForCustomer(String customer) {
-        return bookingRepository.findByCustomerOrderByCreatedAtDesc(customer)
+    public List<BookingResponse> listForCustomer(String customer, BookingStatus status,
+                                                 LocalDate from, LocalDate to) {
+        Specification<Booking> spec = Specification
+                .where(BookingSpec.customerEq(customer))
+                .and(BookingSpec.statusEq(status))
+                .and(BookingSpec.fromDate(from))
+                .and(BookingSpec.toDate(to));
+        return bookingRepository.findAll(spec, Sort.by("createdAt").descending())
                 .stream().map(BookingResponse::from).toList();
     }
 
@@ -245,8 +255,15 @@ public class BookingService {
     }
 
     @Transactional(readOnly = true)
-    public Page<BookingResponse> listAll(Pageable pageable) {
-        return bookingRepository.findAllByOrderByCreatedAtDesc(pageable).map(BookingResponse::from);
+    public Page<BookingResponse> listAll(Pageable pageable, BookingStatus status, String customer,
+                                         Long showId, LocalDate from, LocalDate to) {
+        Specification<Booking> spec = Specification
+                .where(BookingSpec.statusEq(status))
+                .and(BookingSpec.customerEq(customer))
+                .and(BookingSpec.showIdEq(showId))
+                .and(BookingSpec.fromDate(from))
+                .and(BookingSpec.toDate(to));
+        return bookingRepository.findAll(spec, pageable).map(BookingResponse::from);
     }
 
     private void validateDiscountCode(DiscountCode code) {

@@ -3,8 +3,11 @@ package com.example.booking.service;
 import com.example.booking.domain.City;
 import com.example.booking.exception.ResourceNotFoundException;
 import com.example.booking.repository.CityRepository;
+import com.example.booking.repository.spec.CitySpec;
 import com.example.booking.web.dto.CityRequest;
 import com.example.booking.web.dto.CityResponse;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -44,8 +47,12 @@ public class CityService {
     }
 
     @Transactional(readOnly = true)
-    public List<CityResponse> listAll() {
-        return cityRepository.findAll().stream().map(CityResponse::from).toList();
+    public List<CityResponse> listAll(String name, String state, String country) {
+        Specification<City> spec = Specification
+                .where(CitySpec.nameLike(name))
+                .and(CitySpec.stateEq(state))
+                .and(CitySpec.countryEq(country));
+        return cityRepository.findAll(spec, Sort.by("name")).stream().map(CityResponse::from).toList();
     }
 
     private City findCityOrThrow(Long id) {

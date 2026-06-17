@@ -5,8 +5,11 @@ import com.example.booking.domain.Theater;
 import com.example.booking.exception.ResourceNotFoundException;
 import com.example.booking.repository.CityRepository;
 import com.example.booking.repository.TheaterRepository;
+import com.example.booking.repository.spec.TheaterSpec;
 import com.example.booking.web.dto.TheaterRequest;
 import com.example.booking.web.dto.TheaterResponse;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -48,18 +51,21 @@ public class TheaterService {
     }
 
     @Transactional(readOnly = true)
-    public List<TheaterResponse> listAll(Long cityId) {
-        List<Theater> theaters = cityId != null
-                ? theaterRepository.findByCityId(cityId)
-                : theaterRepository.findAll();
-        return theaters.stream().map(TheaterResponse::from).toList();
+    public List<TheaterResponse> listAll(Long cityId, String name) {
+        Specification<Theater> spec = Specification
+                .where(TheaterSpec.cityIdEq(cityId))
+                .and(TheaterSpec.nameLike(name));
+        return theaterRepository.findAll(spec, Sort.by("name")).stream().map(TheaterResponse::from).toList();
     }
 
     /** Used by the customer browse endpoint; 404s if the city itself doesn't exist. */
     @Transactional(readOnly = true)
-    public List<TheaterResponse> listByCity(Long cityId) {
+    public List<TheaterResponse> listByCity(Long cityId, String name) {
         findCityOrThrow(cityId);
-        return theaterRepository.findByCityId(cityId).stream().map(TheaterResponse::from).toList();
+        Specification<Theater> spec = Specification
+                .where(TheaterSpec.cityIdEq(cityId))
+                .and(TheaterSpec.nameLike(name));
+        return theaterRepository.findAll(spec, Sort.by("name")).stream().map(TheaterResponse::from).toList();
     }
 
     private Theater findTheaterOrThrow(Long id) {

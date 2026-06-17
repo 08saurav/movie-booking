@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -57,8 +58,12 @@ public class CityAdminController {
     }
 
     @GetMapping
-    @Operation(summary = "List all cities")
-    public List<CityResponse> listAll() {
-        return cityService.listAll();
+    @Operation(summary = "List cities",
+            description = "Optional filters: name (partial), state, country. All combinable.")
+    public List<CityResponse> listAll(
+            @RequestParam(required = false) String name,
+            @RequestParam(required = false) String state,
+            @RequestParam(required = false) String country) {
+        return cityService.listAll(name, state, country);
     }
 }

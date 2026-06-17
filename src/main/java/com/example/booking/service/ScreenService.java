@@ -9,10 +9,13 @@ import com.example.booking.exception.ResourceNotFoundException;
 import com.example.booking.repository.ScreenRepository;
 import com.example.booking.repository.SeatRepository;
 import com.example.booking.repository.TheaterRepository;
+import com.example.booking.repository.spec.ScreenSpec;
 import com.example.booking.web.dto.ScreenRenameRequest;
 import com.example.booking.web.dto.ScreenRequest;
 import com.example.booking.web.dto.ScreenResponse;
 import com.example.booking.web.dto.SeatResponse;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -81,11 +84,11 @@ public class ScreenService {
     }
 
     @Transactional(readOnly = true)
-    public List<ScreenResponse> listAll(Long theaterId) {
-        List<Screen> screens = theaterId != null
-                ? screenRepository.findByTheaterId(theaterId)
-                : screenRepository.findAll();
-        return screens.stream().map(ScreenResponse::from).toList();
+    public List<ScreenResponse> listAll(Long theaterId, String name) {
+        Specification<Screen> spec = Specification
+                .where(ScreenSpec.theaterIdEq(theaterId))
+                .and(ScreenSpec.nameLike(name));
+        return screenRepository.findAll(spec, Sort.by("name")).stream().map(ScreenResponse::from).toList();
     }
 
     @Transactional(readOnly = true)

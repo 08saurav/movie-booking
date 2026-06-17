@@ -1,5 +1,6 @@
 package com.example.booking.web;
 
+import com.example.booking.domain.BookingStatus;
 import com.example.booking.service.BookingService;
 import com.example.booking.web.dto.BookingRequest;
 import com.example.booking.web.dto.BookingResponse;
@@ -8,6 +9,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -17,9 +19,10 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-
+import java.time.LocalDate;
 import java.util.List;
 
 /**
@@ -59,9 +62,16 @@ public class BookingController {
     }
 
     @GetMapping
-    @Operation(summary = "List my bookings", description = "Returns all bookings for the authenticated customer, newest first.")
-    public List<BookingResponse> list(Authentication authentication) {
-        return bookingService.listForCustomer(authentication.getName());
+    @Operation(summary = "List my bookings",
+            description = "Returns bookings for the authenticated customer, newest first. "
+                    + "Optional filters: status (CONFIRMED/PAYMENT_FAILED/CANCELLED), "
+                    + "from/to (YYYY-MM-DD booking date range). All combinable.")
+    public List<BookingResponse> list(
+            Authentication authentication,
+            @RequestParam(required = false) BookingStatus status,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return bookingService.listForCustomer(authentication.getName(), status, from, to);
     }
 
     @GetMapping("/{id}")

@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -56,8 +57,13 @@ public class MovieAdminController {
     }
 
     @GetMapping
-    @Operation(summary = "List all movies")
-    public List<MovieResponse> listAll() {
-        return movieService.listAll();
+    @Operation(summary = "List movies",
+            description = "Optional filters: title (partial), language, genre, rating. All combinable.")
+    public List<MovieResponse> listAll(
+            @RequestParam(required = false) String title,
+            @RequestParam(required = false) String language,
+            @RequestParam(required = false) String genre,
+            @RequestParam(required = false) String rating) {
+        return movieService.listAll(title, language, genre, rating);
     }
 }
