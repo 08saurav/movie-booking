@@ -97,3 +97,22 @@ failure via `booking.payment.always-fail` or the `setAlwaysFail` method (for
 tests without Spring context restarts). `BookingFlowTest` (7 tests) covers
 happy path, idempotency, payment failure, discount codes, admin/customer list
 views. `mvn test` passes all 23 tests on real PostgreSQL.
+
+Segment 5 (Cancellation, Refunds & Async Notifications) complete: Migration
+`V6__segment5_refunds_notifications.sql` adds `refund_policies` /
+`refund_policy_tiers` tables and `refund_amount` / `cancelled_at` columns to
+`bookings`. Shows carry an optional `refund_policy_id` FK; the default policy
+(100% ≥24h, 50% 12–24h, 0% <12h) is seeded and assigned to all V3 shows.
+`BookingService.cancel()` validates CONFIRMED status, computes refund by finding
+the largest tier whose `hoursBeforeShow ≤ hoursUntilShow`, releases the seat to
+AVAILABLE, and publishes `BookingCancelledEvent`. Customers cancel their own
+bookings (`POST /api/bookings/{id}/cancel`); admins can cancel any booking
+(`POST /api/admin/bookings/{id}/cancel`). Notifications fire via
+`@TransactionalEventListener(AFTER_COMMIT) + @Async` on a dedicated
+`notification-*` thread pool (`AsyncConfig`), so the HTTP response is returned
+before the email fires. Events carry primitives only (no JPA entity refs) to
+avoid LazyInitializationException on the async thread. `CancellationAndNotificationTest`
+(5 tests) verifies refund calculation, double-cancel rejection, admin override,
+and proves the listener runs on a background thread using a static
+`LinkedBlockingQueue` (blocking `poll()` is deterministic regardless of Spring's
+CGLIB proxy wrapping). `mvn test` passes all 28 tests on real PostgreSQL.
