@@ -31,3 +31,10 @@ server:
 logging:
   level:
     org.springframework.security: INFO
+
+# Segment 3: hold TTL in minutes (default 10 minutes)
+# Segment 4: payment mock — set always-fail=true in @TestPropertySource to test the failure path
+booking:
+  seat-hold-ttl-minutes: 10
+  payment:
+    always-fail: false

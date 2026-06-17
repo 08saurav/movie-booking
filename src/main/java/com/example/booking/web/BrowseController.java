@@ -54,9 +54,9 @@ public class BrowseController {
     }
 
     @GetMapping("/api/shows/{id}/seats")
-    @Operation(summary = "List available seats for a show",
-            description = "Returns only AVAILABLE seats. HELD/BOOKED seats are introduced in Segment 3.")
-    public List<ShowSeatResponse> listAvailableSeats(@PathVariable Long id) {
-        return showService.getAvailableSeats(id);
+    @Operation(summary = "List all seats for a show with real-time status",
+            description = "Returns all seats with their current status: AVAILABLE, HELD (time-bound), BOOKED, or CANCELLED.")
+    public List<ShowSeatResponse> listSeatsWithStatus(@PathVariable Long id) {
+        return showService.getSeatsWithStatus(id);
     }
 }

@@ -17,10 +17,10 @@ import java.time.Instant;
 
 /**
  * One row per (show, seat): the per-show booking inventory. Generated in
- * bulk by {@code ShowService} when a show is created. The hold/booking
- * fields (held-by, hold-expiry) and the atomic conditional-UPDATE that makes
- * holding race-free arrive in Segment 3, via an ALTER TABLE on top of the
- * {@code show_seats} table this entity already maps.
+ * bulk by {@code ShowService} when a show is created. Hold/booking fields
+ * (held_by, hold_expires_at) added in Segment 3 support the atomic
+ * conditional-UPDATE that makes holding race-free. The database serializes
+ * concurrent attempts at the WHERE clause level; no application locking needed.
  */
 @Entity
 @Table(name = "show_seats")
@@ -41,6 +41,12 @@ public class ShowSeat {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private ShowSeatStatus status;
+
+    @Column(name = "held_by", length = 100)
+    private String heldBy;
+
+    @Column(name = "hold_expires_at")
+    private Instant holdExpiresAt;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -78,5 +84,13 @@ public class ShowSeat {
 
     public Instant getCreatedAt() {
         return createdAt;
+    }
+
+    public String getHeldBy() {
+        return heldBy;
+    }
+
+    public Instant getHoldExpiresAt() {
+        return holdExpiresAt;
     }
 }

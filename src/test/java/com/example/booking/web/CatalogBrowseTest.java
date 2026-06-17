@@ -88,16 +88,15 @@ class CatalogBrowseTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void listAvailableSeatsForShow_excludesSeatsThatAreNotAvailable() {
-        // Seeded show_seats are all AVAILABLE in Segment 2 (no hold/book flow yet).
-        // Flip one directly in the database to simulate a future-segment state and
-        // prove the "available only" filter actually filters.
+    void listSeatsForShow_includesAllStatusesNotJustAvailable() {
+        // Segment 3: endpoint now returns all seats with real-time status,
+        // not just AVAILABLE ones. Verify it includes BOOKED seats too.
         Long showId = jdbcTemplate.queryForObject(
                 "SELECT show_id FROM show_seats GROUP BY show_id HAVING count(*) > 1 LIMIT 1", Long.class);
         Long seatToBook = jdbcTemplate.queryForObject(
                 "SELECT id FROM show_seats WHERE show_id = ? LIMIT 1", Long.class, showId);
-        int countBefore = jdbcTemplate.queryForObject(
-                "SELECT count(*) FROM show_seats WHERE show_id = ? AND status = 'AVAILABLE'", Integer.class, showId);
+        int totalSeatsOnShow = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM show_seats WHERE show_id = ?", Integer.class, showId);
 
         jdbcTemplate.update("UPDATE show_seats SET status = 'BOOKED' WHERE id = ?", seatToBook);
         try {
@@ -105,8 +104,9 @@ class CatalogBrowseTest extends AbstractIntegrationTest {
                     asCustomer().getForEntity("/api/shows/" + showId + "/seats", ShowSeatResponse[].class);
             List<ShowSeatResponse> seats = Arrays.asList(response.getBody());
 
-            assertThat(seats).hasSize(countBefore - 1);
-            assertThat(seats).noneMatch(s -> s.showSeatId().equals(seatToBook));
+            // Segment 3: now returns ALL seats, including BOOKED ones
+            assertThat(seats).hasSize(totalSeatsOnShow);
+            assertThat(seats).anyMatch(s -> s.showSeatId().equals(seatToBook) && s.status().equals("BOOKED"));
         } finally {
             jdbcTemplate.update("UPDATE show_seats SET status = 'AVAILABLE' WHERE id = ?", seatToBook);
         }
