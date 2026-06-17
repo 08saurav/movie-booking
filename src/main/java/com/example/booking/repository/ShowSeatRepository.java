@@ -111,4 +111,43 @@ public interface ShowSeatRepository extends JpaRepository<ShowSeat, Long>, JpaSp
     int releaseBookedSeat(@Param("seatId") Long seatId);
 
     Optional<ShowSeat> findByShowIdAndSeatId(Long showId, Long seatId);
+
+    /**
+     * Refresh the expiry on an existing hold the same customer already owns.
+     * Used to make re-holding idempotent: instead of 409, extend the timer.
+     *
+     * @return 1 if the hold was refreshed, 0 if the seat isn't held by this user
+     */
+    @Modifying
+    @Query("""
+        UPDATE ShowSeat s SET s.holdExpiresAt = :expiresAt
+        WHERE s.id = :seatId AND s.status = 'HELD' AND s.heldBy = :userId
+        """)
+    int refreshHold(
+            @Param("seatId") Long seatId,
+            @Param("userId") String userId,
+            @Param("expiresAt") Instant expiresAt);
+
+    /**
+     * Count active holds for a customer in a show, excluding a specific seat.
+     * Used to enforce one-hold-per-show: re-holding the same seat is allowed
+     * (idempotent refresh), but holding a second seat is rejected.
+     */
+    @Query("""
+        SELECT COUNT(ss) FROM ShowSeat ss
+        WHERE ss.show.id = :showId
+          AND ss.heldBy = :userId
+          AND ss.status = 'HELD'
+          AND ss.holdExpiresAt > :now
+          AND ss.id != :seatId
+        """)
+    long countActiveHoldsForUserExcludingSeat(
+            @Param("showId") Long showId,
+            @Param("userId") String userId,
+            @Param("now") Instant now,
+            @Param("seatId") Long seatId);
+
+    /** Count AVAILABLE seats for a show (used for show-listing seat counts). */
+    @Query("SELECT COUNT(ss) FROM ShowSeat ss WHERE ss.show.id = :showId AND ss.status = 'AVAILABLE'")
+    long countAvailableByShowId(@Param("showId") Long showId);
 }

@@ -132,10 +132,10 @@ class BookingFlowTest extends AbstractIntegrationTest {
         customer.postForEntity("/api/shows/" + showId + "/seats/" + showSeatId + "/hold", null, String.class);
         BookingResponse booking = postBooking(customer, showId, showSeatId, null, UUID.randomUUID().toString());
 
-        ResponseEntity<BookingResponse[]> listResponse = customer.getForEntity("/api/bookings", BookingResponse[].class);
+        // Endpoint now returns a Page — deserialize as String and check the booking id appears in the content array
+        ResponseEntity<String> listResponse = customer.getForEntity("/api/bookings", String.class);
         assertThat(listResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(listResponse.getBody()).isNotNull();
-        assertThat(listResponse.getBody()).anyMatch(b -> b.id().equals(booking.id()));
+        assertThat(listResponse.getBody()).contains(booking.id().toString());
     }
 
     @Test

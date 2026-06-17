@@ -34,16 +34,20 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 /**
- * Concurrency test: N threads simultaneously attempt to hold the same seat.
+ * Concurrency test: N threads simultaneously attempt to hold the same seat,
+ * each authenticating as a *different* customer.
+ *
  * Exactly 1 succeeds (200), the other N-1 fail (409 Conflict).
+ *
+ * Using distinct users is the real-world scenario and avoids interference from
+ * the idempotent re-hold feature (which correctly lets the *same* user refresh
+ * their own hold without a 409).
  *
  * This test MUST use Testcontainers (real PostgreSQL) because H2 does not have
  * the same row-level locking semantics. The atomic conditional UPDATE closes
- * the TOCTOU window at the database level; this test verifies that behavior.
+ * the TOCTOU window at the database level; this test verifies that behaviour.
  *
  * Uses TestRestTemplate (thread-safe) rather than MockMvc for concurrent testing.
- *
- * Segment 3: Concurrency Core.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 public class SeatHoldConcurrencyTest extends AbstractIntegrationTest {
@@ -125,9 +129,10 @@ public class SeatHoldConcurrencyTest extends AbstractIntegrationTest {
                     // Wait for the starting signal
                     startLatch.await();
 
-                    // All threads use the same in-memory customer (for simplicity).
-                    // The atomic UPDATE serializes concurrent attempts regardless of user.
-                    TestRestTemplate customer = restTemplate.withBasicAuth("customer", "customer123");
+                    // Each thread is a distinct customer (customer, customer1..customer9).
+                    // This mirrors the real-world race: N different people competing for one seat.
+                    String username = threadId == 0 ? "customer" : "customer" + threadId;
+                    TestRestTemplate customer = restTemplate.withBasicAuth(username, "customer123");
                     String url = "/api/shows/" + showId + "/seats/" + showSeatId + "/hold";
 
                     ResponseEntity<String> response = customer.postForEntity(url, null, String.class);

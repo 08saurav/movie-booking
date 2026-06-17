@@ -29,6 +29,7 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -52,12 +53,14 @@ public class ShowService {
     private final TheaterRepository theaterRepository;
     private final PricingTierRepository pricingTierRepository;
     private final RefundPolicyRepository refundPolicyRepository;
+    private final PricingService pricingService;
 
     public ShowService(ShowRepository showRepository, MovieRepository movieRepository,
                         ScreenRepository screenRepository, SeatRepository seatRepository,
                         ShowSeatRepository showSeatRepository, TheaterRepository theaterRepository,
                         PricingTierRepository pricingTierRepository,
-                        RefundPolicyRepository refundPolicyRepository) {
+                        RefundPolicyRepository refundPolicyRepository,
+                        PricingService pricingService) {
         this.showRepository = showRepository;
         this.movieRepository = movieRepository;
         this.screenRepository = screenRepository;
@@ -66,6 +69,7 @@ public class ShowService {
         this.theaterRepository = theaterRepository;
         this.pricingTierRepository = pricingTierRepository;
         this.refundPolicyRepository = refundPolicyRepository;
+        this.pricingService = pricingService;
     }
 
     public ShowResponse create(ShowRequest request) {
@@ -93,14 +97,14 @@ public class ShowService {
                 .toList();
         showSeatRepository.saveAll(showSeats);
 
-        return ShowResponse.from(show);
+        return ShowResponse.from(show, showSeats.size());
     }
 
     public ShowResponse reschedule(Long id, ShowRescheduleRequest request) {
         Show show = findShowOrThrow(id);
         Instant endTime = request.startTime().plus(Duration.ofMinutes(show.getMovie().getDurationMinutes()));
         show.reschedule(request.startTime(), endTime);
-        return ShowResponse.from(show);
+        return ShowResponse.from(show, showSeatRepository.countAvailableByShowId(id));
     }
 
     public void delete(Long id) {
@@ -109,7 +113,8 @@ public class ShowService {
 
     @Transactional(readOnly = true)
     public ShowResponse getById(Long id) {
-        return ShowResponse.from(findShowOrThrow(id));
+        Show show = findShowOrThrow(id);
+        return ShowResponse.from(show, showSeatRepository.countAvailableByShowId(id));
     }
 
     /** Admin: list all shows with optional filters. */
@@ -117,6 +122,10 @@ public class ShowService {
     public List<ShowResponse> listAll(Long movieId, Long screenId, Long theaterId, Long cityId,
                                       LocalDate date, LocalDate from, LocalDate to,
                                       String language, String genre) {
+        if (from != null && to != null && from.isAfter(to)) {
+            throw new com.example.booking.exception.InvalidRequestException(
+                    "'from' date must not be after 'to' date");
+        }
         Instant fromInstant = from != null ? from.atStartOfDay(ZoneOffset.UTC).toInstant() : null;
         Instant toInstant = to != null ? to.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant() : null;
         Specification<Show> spec = Specification
@@ -130,7 +139,7 @@ public class ShowService {
                 .and(ShowSpec.languageEq(language))
                 .and(ShowSpec.genreEq(genre));
         return showRepository.findAll(spec, Sort.by("startTime").ascending()).stream()
-                .map(ShowResponse::from)
+                .map(show -> ShowResponse.from(show, showSeatRepository.countAvailableByShowId(show.getId())))
                 .toList();
     }
 
@@ -153,28 +162,37 @@ public class ShowService {
                 .and(ShowSpec.languageEq(language))
                 .and(ShowSpec.genreEq(genre));
         return showRepository.findAll(spec, Sort.by("startTime").ascending()).stream()
-                .map(ShowResponse::from)
+                .map(show -> ShowResponse.from(show, showSeatRepository.countAvailableByShowId(show.getId())))
                 .toList();
     }
 
     /**
-     * Seat inventory for a show with real-time status and optional filters.
+     * Seat inventory for a show with real-time status, effective seat price,
+     * and whether the requesting customer holds each seat.
      * 404s if the show doesn't exist.
      */
     @Transactional(readOnly = true)
     public List<ShowSeatResponse> getSeatsWithStatus(Long showId, ShowSeatStatus status,
-                                                     SeatCategory category, String rowLabel) {
-        if (!showRepository.existsById(showId)) {
-            throw new ResourceNotFoundException("Show " + showId + " not found");
-        }
+                                                     SeatCategory category, String rowLabel,
+                                                     String currentUser) {
+        Show show = showRepository.findById(showId)
+                .orElseThrow(() -> new ResourceNotFoundException("Show " + showId + " not found"));
+
+        PricingTier tier = show.getPricingTier();
         Specification<ShowSeat> spec = Specification
                 .where(ShowSeatSpec.showIdEq(showId))
                 .and(ShowSeatSpec.statusEq(status))
                 .and(ShowSeatSpec.categoryEq(category))
                 .and(ShowSeatSpec.rowLabelEq(rowLabel));
         return showSeatRepository.findAll(spec, Sort.by("seat.rowLabel", "seat.seatNumber")).stream()
-                .map(ShowSeatResponse::from)
+                .map(ss -> ShowSeatResponse.from(ss, effectivePrice(tier, ss, show), currentUser))
                 .toList();
+    }
+
+    /** Compute the pre-discount price for a seat (null if show has no pricing tier). */
+    private BigDecimal effectivePrice(PricingTier tier, ShowSeat showSeat, Show show) {
+        if (tier == null) return null;
+        return pricingService.calculate(tier, showSeat.getSeat().getCategory(), show, null).finalPrice();
     }
 
     private Show findShowOrThrow(Long id) {

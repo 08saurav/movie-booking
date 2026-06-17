@@ -64,6 +64,17 @@ public class SecurityConfig {
                 .password(encoder.encode("customer123"))
                 .roles("CUSTOMER")
                 .build();
-        return new InMemoryUserDetailsManager(admin, customer);
+        // customer1–customer9: extra identities used by SeatHoldConcurrencyTest so each
+        // concurrent thread holds a distinct user account (the real-world scenario).
+        UserDetails[] extras = new UserDetails[9];
+        for (int i = 1; i <= 9; i++) {
+            extras[i - 1] = User.withUsername("customer" + i)
+                    .password(encoder.encode("customer123"))
+                    .roles("CUSTOMER")
+                    .build();
+        }
+        InMemoryUserDetailsManager mgr = new InMemoryUserDetailsManager(admin, customer);
+        for (UserDetails u : extras) mgr.createUser(u);
+        return mgr;
     }
 }

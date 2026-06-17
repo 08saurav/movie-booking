@@ -12,6 +12,7 @@ import com.example.booking.web.dto.TheaterResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -75,13 +76,16 @@ public class BrowseController {
 
     @GetMapping("/api/shows/{id}/seats")
     @Operation(summary = "List all seats for a show with real-time status",
-            description = "Returns seats with their current status. Optional filters: status (AVAILABLE/HELD/BOOKED/CANCELLED), "
-                    + "category (REGULAR/PREMIUM), rowLabel (e.g. A, B).")
+            description = "Returns seats with their current status and effective price. "
+                    + "The 'heldByMe' field is true only for seats the requesting customer currently holds. "
+                    + "Optional filters: status (AVAILABLE/HELD/BOOKED/CANCELLED), category (REGULAR/PREMIUM), rowLabel (e.g. A, B).")
     public List<ShowSeatResponse> listSeatsWithStatus(
             @PathVariable Long id,
             @RequestParam(required = false) ShowSeatStatus status,
             @RequestParam(required = false) SeatCategory category,
-            @RequestParam(required = false) String rowLabel) {
-        return showService.getSeatsWithStatus(id, status, category, rowLabel);
+            @RequestParam(required = false) String rowLabel,
+            Authentication authentication) {
+        String currentUser = authentication != null ? authentication.getName() : null;
+        return showService.getSeatsWithStatus(id, status, category, rowLabel, currentUser);
     }
 }

@@ -3,6 +3,7 @@ package com.example.booking.service;
 import com.example.booking.domain.Show;
 import com.example.booking.domain.ShowSeat;
 import com.example.booking.domain.ShowSeatStatus;
+import com.example.booking.exception.InvalidRequestException;
 import com.example.booking.exception.ResourceNotFoundException;
 import com.example.booking.exception.SeatNotAvailableException;
 import com.example.booking.repository.ShowRepository;
@@ -20,6 +21,8 @@ import java.time.Instant;
  * level (atomic UPDATE in the WHERE clause); no application-level locking.
  *
  * Segment 3: Concurrency Core.
+ * Segment 7: Improvements — added show-started guard, one-hold-per-show
+ * enforcement, and idempotent re-hold (refreshes expiry instead of 409).
  */
 @Service
 @Transactional
@@ -37,34 +40,50 @@ public class SeatHoldService {
     }
 
     /**
-     * Hold a seat atomically. Fails (409) if the seat is already booked or
-     * held by someone else (and not expired). Uses an atomic conditional UPDATE
-     * so the database serializes concurrent attempts.
+     * Hold a seat atomically. Business rules enforced before the DB update:
+     * <ul>
+     *   <li>Show must not have already started.</li>
+     *   <li>Customer may hold at most one seat per show (prevents seat-squatting).</li>
+     *   <li>Re-holding the same seat the customer already holds refreshes the
+     *       expiry instead of returning 409, making the call idempotent.</li>
+     * </ul>
      */
     public SeatHoldResponse holdSeat(Long showId, Long seatId, String userId) {
-        // Validate the show exists
         Show show = showRepository.findById(showId)
                 .orElseThrow(() -> new ResourceNotFoundException("Show " + showId + " not found"));
+
+        if (!show.getStartTime().isAfter(Instant.now())) {
+            throw new InvalidRequestException("Show has already started — seats can no longer be held");
+        }
 
         ShowSeat showSeat = showSeatRepository.findById(seatId)
                 .orElseThrow(() -> new ResourceNotFoundException("ShowSeat " + seatId + " not found"));
 
         if (!showSeat.getShow().getId().equals(showId)) {
-            throw new IllegalArgumentException("Seat does not belong to this show");
+            throw new InvalidRequestException("Seat does not belong to this show");
         }
 
         Instant now = Instant.now();
         Instant expiresAt = now.plusSeconds(holdTtlMinutes * 60L);
 
-        // Atomic conditional UPDATE: succeeds only if seat is AVAILABLE or hold is expired
+        // One-hold-per-show: reject if the customer actively holds a *different* seat
+        long otherActiveHolds = showSeatRepository.countActiveHoldsForUserExcludingSeat(showId, userId, now, seatId);
+        if (otherActiveHolds > 0) {
+            throw new InvalidRequestException(
+                    "You already have an active hold for this show. Release it before holding another seat.");
+        }
+
+        // Atomic conditional UPDATE: succeeds if the seat is AVAILABLE or its hold is expired
         int updated = showSeatRepository.holdSeat(seatId, userId, expiresAt, now);
 
         if (updated == 0) {
-            // Hold failed: seat is taken, held by someone else, or in a non-holdable state
-            throw new SeatNotAvailableException("Seat " + seatId + " is not available");
+            // Seat wasn't available — check if we're the one holding it (idempotent re-hold)
+            int refreshed = showSeatRepository.refreshHold(seatId, userId, expiresAt);
+            if (refreshed == 0) {
+                throw new SeatNotAvailableException("Seat " + seatId + " is not available");
+            }
         }
 
-        // Refresh to get updated entity
         ShowSeat heldSeat = showSeatRepository.findById(seatId)
                 .orElseThrow(() -> new ResourceNotFoundException("ShowSeat " + seatId + " not found"));
 

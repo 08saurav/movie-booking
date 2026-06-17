@@ -4,7 +4,7 @@ A backend for a movie ticket booking system: multiple cities, theaters, screens,
 and shows, with seat-level booking, time-bound seat holds, pricing tiers and
 discounts, payment, confirmation, and policy-based refunds. Built with Spring Boot.
 
-> This README reflects the completed system through **Segment 6 (Hardening & Polish)**.
+> This README reflects the completed system through **Segment 7 (UX & Filters)**.
 
 ## Tech stack
 
@@ -48,15 +48,17 @@ mvn spring-boot:run
 - API base path: `http://localhost:8080/api`
 - Swagger UI: `http://localhost:8080/swagger-ui.html`
 
-### Demo credentials (Segment 1, in-memory)
+### Demo credentials (in-memory)
 
-| Username   | Password      | Role     |
-|------------|---------------|----------|
-| `admin`    | `admin123`    | ADMIN    |
-| `customer` | `customer123` | CUSTOMER |
+| Username       | Password      | Role     |
+|----------------|---------------|----------|
+| `admin`        | `admin123`    | ADMIN    |
+| `customer`     | `customer123` | CUSTOMER |
+| `customer1`–`customer9` | `customer123` | CUSTOMER |
 
-These are seeded in memory for development and review. They will move into the
-database when user-owned data (bookings) is introduced in a later segment.
+`customer1`–`customer9` are additional accounts used by the concurrency test suite
+(10 distinct users racing for one seat). All customer accounts have identical
+permissions.
 
 ### Try it
 
@@ -77,7 +79,7 @@ In Swagger UI, click **Authorize**, enter one of the credential pairs above, the
    Returns a booking with `status: CONFIRMED` and a `finalPrice`.
 4. **Idempotency**: re-submit the same `X-Idempotency-Key` — the same booking is returned
    without reprocessing or re-charging.
-5. **View history**: `GET /api/bookings` (as `customer`) — your bookings, newest first.
+5. **View history**: `GET /api/bookings` (as `customer`) — your bookings, paginated newest first. Supports `?status=CONFIRMED&from=2025-01-01&to=2025-12-31&page=0&size=20` filters.
 6. **Admin view**: `GET /api/admin/bookings?page=0&size=20` — paginated list of all bookings.
 7. **Pricing tiers**: `GET /api/admin/pricing-tiers` — lists the seeded "Standard" tier.
    `POST /api/admin/pricing-tiers` — create custom tiers.
@@ -290,6 +292,46 @@ Two layers prevent double-booking:
 1. **Segment 3**: atomic conditional UPDATE closes the TOCTOU window on the hold.
 2. **Segment 4**: `UNIQUE(show_seat_id)` on the `bookings` table — even if the application logic had a flaw, the database would reject a second confirmed booking for the same show-seat.
 
+## Filters on list endpoints (Segment 7)
+
+Every list endpoint now supports optional, combinable query parameters. `null` params are simply ignored — you can pass none, some, or all:
+
+| Endpoint | Filter params |
+|---|---|
+| `GET /api/cities` | `name` (partial), `state`, `country` |
+| `GET /api/cities/{id}/theaters` | `name` (partial) |
+| `GET /api/theaters/{id}/shows` | `movieId`, `movieTitle` (partial), `date` (YYYY-MM-DD), `language`, `genre` |
+| `GET /api/shows/{id}/seats` | `status` (AVAILABLE/HELD/BOOKED), `category` (REGULAR/PREMIUM), `rowLabel` (e.g. A, B) |
+| `GET /api/admin/movies` | `title` (partial), `language`, `genre`, `rating` |
+| `GET /api/admin/shows` | `movieId`, `movieTitle`, `screenId`, `theaterId`, `cityId`, `date`, `startFrom`, `startBefore`, `language`, `genre` |
+| `GET /api/admin/discount-codes` | `active`, `discountType`, `code` (partial) |
+| `GET /api/admin/refund-policies` | `name` (partial), `isDefault` |
+| `GET /api/bookings` | `status`, `from` / `to` (booking date range, YYYY-MM-DD) |
+| `GET /api/admin/bookings` | `status`, `customer`, `showId`, `from`, `to` |
+
+Date range endpoints return `400` if `from > to`.
+
+## Customer UX improvements (Segment 7)
+
+These changes make the API more ergonomic for the customer use case:
+
+**Seat list** (`GET /api/shows/{id}/seats`):
+- `heldByMe: true/false` — each seat tells the authenticated customer whether *they* hold it. Other customers' `heldBy` username is never exposed.
+- `price` — the effective price for that seat (REGULAR or PREMIUM rate × weekend multiplier) is included in the seat list response, so customers can compare costs before choosing.
+
+**Show list** (`GET /api/theaters/{id}/shows`, `GET /api/admin/shows`):
+- `availableSeatCount` — real-time count of AVAILABLE seats in each show, so customers can see at a glance if a show is nearly sold out.
+- `refundPolicyTiers` — the applicable refund ladder is embedded in the show response; customers see the cancellation terms before booking.
+
+**Hold logic**:
+- **Show-not-started guard**: holding a seat on a show that has already started returns `400`. A customer can only hold seats for future shows.
+- **One hold per show**: a customer can only hold one seat at a time per show. Attempting to hold a second seat (while still holding the first) returns `400` with a clear message. Release the existing hold first.
+- **Idempotent re-hold**: calling `POST hold` on a seat the customer *already* holds (before expiry) refreshes the expiry instead of returning 409 — safe to retry from a flaky network.
+
+**Booking history** (`GET /api/bookings`):
+- Results are paginated (default page size 20, newest first). Use `?page=0&size=10` etc.
+- Optional filters: `status`, `from` / `to` date range.
+
 ## Test
 
 ```bash
@@ -406,3 +448,4 @@ The system is built in reviewable segments:
 4. **Pricing, discounts, payment, confirmation** — booking state machine end to end. _(done)_
 5. **Cancellation, refunds, notifications** — policy-based refunds, async notifications. _(done)_
 6. **Hardening & polish** — `@ApiResponse` Swagger docs, `@EnableSpringDataWebSupport`, full E2E integration test, README finalization. _(done)_
+7. **UX & filters** — composable optional filters on all list endpoints (JPA Specifications); customer UX: `heldByMe`, seat prices, available seat count, refund tiers in show response, one-hold-per-show, idempotent re-hold, show-started guard, paginated booking history, date range validation. _(done)_

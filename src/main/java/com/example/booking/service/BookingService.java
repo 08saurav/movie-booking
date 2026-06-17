@@ -226,15 +226,17 @@ public class BookingService {
     }
 
     @Transactional(readOnly = true)
-    public List<BookingResponse> listForCustomer(String customer, BookingStatus status,
-                                                 LocalDate from, LocalDate to) {
+    public Page<BookingResponse> listForCustomer(String customer, BookingStatus status,
+                                                 LocalDate from, LocalDate to, Pageable pageable) {
+        if (from != null && to != null && from.isAfter(to)) {
+            throw new InvalidRequestException("'from' date must not be after 'to' date");
+        }
         Specification<Booking> spec = Specification
                 .where(BookingSpec.customerEq(customer))
                 .and(BookingSpec.statusEq(status))
                 .and(BookingSpec.fromDate(from))
                 .and(BookingSpec.toDate(to));
-        return bookingRepository.findAll(spec, Sort.by("createdAt").descending())
-                .stream().map(BookingResponse::from).toList();
+        return bookingRepository.findAll(spec, pageable).map(BookingResponse::from);
     }
 
     @Transactional(readOnly = true)
@@ -257,6 +259,9 @@ public class BookingService {
     @Transactional(readOnly = true)
     public Page<BookingResponse> listAll(Pageable pageable, BookingStatus status, String customer,
                                          Long showId, LocalDate from, LocalDate to) {
+        if (from != null && to != null && from.isAfter(to)) {
+            throw new InvalidRequestException("'from' date must not be after 'to' date");
+        }
         Specification<Booking> spec = Specification
                 .where(BookingSpec.statusEq(status))
                 .and(BookingSpec.customerEq(customer))

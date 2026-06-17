@@ -1,8 +1,10 @@
 package com.example.booking.web.dto;
 
+import com.example.booking.domain.RefundTier;
 import com.example.booking.domain.Show;
 
 import java.time.Instant;
+import java.util.List;
 
 public record ShowResponse(
         Long id,
@@ -19,15 +21,28 @@ public record ShowResponse(
         Long pricingTierId,
         String pricingTierName,
         Long refundPolicyId,
-        String refundPolicyName
+        String refundPolicyName,
+        /** Tier ladder used to calculate refunds on cancellation; empty if no policy assigned. */
+        List<RefundPolicyTierInfo> refundPolicyTiers,
+        /** How many seats are still AVAILABLE right now. */
+        long availableSeatCount
 ) {
 
-    public static ShowResponse from(Show show) {
+    public record RefundPolicyTierInfo(int hoursBeforeShow, int refundPercent) {
+        public static RefundPolicyTierInfo from(RefundTier tier) {
+            return new RefundPolicyTierInfo(tier.getHoursBeforeShow(), tier.getRefundPercent());
+        }
+    }
+
+    public static ShowResponse from(Show show, long availableSeatCount) {
         var screen = show.getScreen();
         var theater = screen.getTheater();
         var city = theater.getCity();
         var tier = show.getPricingTier();
         var policy = show.getRefundPolicy();
+        List<RefundPolicyTierInfo> tiers = policy != null
+                ? policy.getTiers().stream().map(RefundPolicyTierInfo::from).toList()
+                : List.of();
         return new ShowResponse(
                 show.getId(),
                 show.getMovie().getId(),
@@ -43,6 +58,8 @@ public record ShowResponse(
                 tier != null ? tier.getId() : null,
                 tier != null ? tier.getName() : null,
                 policy != null ? policy.getId() : null,
-                policy != null ? policy.getName() : null);
+                policy != null ? policy.getName() : null,
+                tiers,
+                availableSeatCount);
     }
 }

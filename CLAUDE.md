@@ -129,3 +129,21 @@ protected from cross-test state by restoring expired holds to AVAILABLE in a
 finally block. README updated to cover all six segments including the
 cancellation/refund API and the async notification design. `mvn test` passes
 all 31 tests on real PostgreSQL.
+
+Segment 7 (UX & Filters) complete: JPA Specifications (`JpaSpecificationExecutor`)
+added to every repository; 9 spec classes in `repository/spec/` provide composable,
+null-safe predicates. All list endpoints accept optional combinable query params
+(`name`, `state`, `movieTitle`, `date`, `language`, `genre`, `status`, `category`,
+`rowLabel`, `from`/`to`, etc.). Customer UX improvements: `ShowSeatResponse` exposes
+`price` (effective per-seat price) and `heldByMe` (boolean — never leaks other
+customers' `heldBy` username); `ShowResponse` includes `availableSeatCount` (live
+AVAILABLE count) and `refundPolicyTiers` (full tier ladder, so cancellation terms
+are visible before booking). `SeatHoldService` enforces three new invariants: (1)
+show-started guard (400 if show has already started), (2) one-hold-per-show (400
+if customer holds another seat in the same show), (3) idempotent re-hold (re-holding
+an already-held seat refreshes expiry instead of 409). `GET /api/bookings` is now
+paginated (`Page<BookingResponse>`, default 20/page, newest first) with optional
+`status`/`from`/`to` filters; `from > to` returns 400 on all date-range endpoints.
+`SecurityConfig` adds `customer1`–`customer9` accounts so `SeatHoldConcurrencyTest`
+uses distinct users per thread (the real-world race scenario). `mvn test` passes
+all 31 tests on real PostgreSQL.

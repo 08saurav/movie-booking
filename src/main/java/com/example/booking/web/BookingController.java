@@ -9,6 +9,10 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -23,7 +27,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDate;
-import java.util.List;
 
 /**
  * Customer booking endpoints. Segment 4: Pricing, Payment & Confirmation.
@@ -63,15 +66,17 @@ public class BookingController {
 
     @GetMapping
     @Operation(summary = "List my bookings",
-            description = "Returns bookings for the authenticated customer, newest first. "
+            description = "Returns bookings for the authenticated customer, newest first (paginated). "
                     + "Optional filters: status (CONFIRMED/PAYMENT_FAILED/CANCELLED), "
-                    + "from/to (YYYY-MM-DD booking date range). All combinable.")
-    public List<BookingResponse> list(
+                    + "from/to (YYYY-MM-DD booking date range). All combinable. "
+                    + "Supports ?page=0&size=20 pagination.")
+    public Page<BookingResponse> list(
             Authentication authentication,
             @RequestParam(required = false) BookingStatus status,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
-        return bookingService.listForCustomer(authentication.getName(), status, from, to);
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
+        return bookingService.listForCustomer(authentication.getName(), status, from, to, pageable);
     }
 
     @GetMapping("/{id}")
